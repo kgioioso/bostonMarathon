@@ -1,0 +1,1093 @@
+<html>
+<head>
+  <script src="https://d3js.org/d3.v4.min.js"></script>
+  <link href="https://fonts.googleapis.com/css?family=Raleway" rel="stylesheet">
+
+  <style>
+  text{
+    font-family: 'Raleway', sans-serif;
+  }
+  #clockdiv{
+    width : 100px;
+    padding: 0px;
+    margin: 0px;
+    display: inline-block;
+  }
+  body{
+    background-color:#132549;
+  }
+    path {
+      fill: none;
+      stroke: none;
+      stroke-width: 3px;
+    }
+
+    #sliderTime{
+      width:1250px;
+    }
+    #shared{
+      color: #caa502;
+    }
+    .pathpoint{
+      fill: none;
+      stroke: none;
+    }
+
+    .runner {
+      fill: steelblue;
+      stroke: #fff;
+      stroke-width: 3px;
+    }
+  </style>
+</head>
+
+ <div id = "clockdiv">
+<img src="dg8.gif" name="hr1">
+<img src="dg8.gif" name="hr2">
+<img src="dgc.gif">
+<img src="dg8.gif" name="mn1">
+<img src="dg8.gif" name="mn2"></div>
+
+<script type="text/javascript">
+
+// (c) 2000-2014 ricocheting.com
+dg = new Array();
+dg[0]=new Image();dg[0].src="dg0.gif";
+dg[1]=new Image();dg[1].src="dg1.gif";
+dg[2]=new Image();dg[2].src="dg2.gif";
+dg[3]=new Image();dg[3].src="dg3.gif";
+dg[4]=new Image();dg[4].src="dg4.gif";
+dg[5]=new Image();dg[5].src="dg5.gif";
+dg[6]=new Image();dg[6].src="dg6.gif";
+dg[7]=new Image();dg[7].src="dg7.gif";
+dg[8]=new Image();dg[8].src="dg8.gif";
+dg[9]=new Image();dg[9].src="dg9.gif";
+// object: mile
+function dotime(time){
+  var hr=Math.floor(time/60),mn=Math.floor(time%60);
+  // adjust from 24hr clock
+  if(hr==0){hr=0;}
+  else if(hr>12){hr-=12;}
+  document.hr1.src = getSrc(hr,10);
+  document.hr2.src = getSrc(hr,1);
+  document.mn1.src = getSrc(mn,10);
+  document.mn2.src = getSrc(mn,1);
+}
+function getSrc(digit,index){
+  return dg[(Math.floor(digit/index)%10)].src;
+}
+
+
+
+</script>
+
+<input id="sliderTime" type="range" min="0" max="515" value="50"/>
+  <script>
+    // GLOBAL VARIABLES
+    var runners
+    var males = []
+    var maleAgeGroups = [[] ,[], [], [], [], [], [], [], [], []]
+    var females = []
+    var femaleAgeGroups = [[] ,[], [], [], [], [], [], [], [], []]
+    var ageGroups = [[] ,[], [], [], [], [], [], [], [], []]
+    var repRunnersM = []
+    var repRunnersFM= []
+    var repRunnersF = []
+    var visibility = {"male":false, "female":false, "general":true, "fm":false}
+    var repRunners = []
+    var newR;
+    var slider = document.getElementById("sliderTime")
+    var historical
+
+    var svg = d3.select("body").append("svg")
+    .attr("id","map")
+    .attr("width", 1300)
+    .attr("height", 700)
+    .style("background-color", "#132549");
+
+
+    svg.append("text")
+    .text("Boston Marathon 2016")
+    .style("stroke", "#caa502")
+    .attr("x", 300)
+    .attr("y", 70)
+    .style("font-size", 40)
+    .style("text-anchor", "middle")
+    .style("fill", "#caa502")
+
+
+
+    svg.append("text")
+    .text("move slider | hover over bars and circles | click circles | full screen recommended")
+    .style("stroke-weight", 100)
+    .style("stroke", "#caa502")
+    .attr("x", 300)
+    .attr("y", 90)
+    .style("text-anchor", "middle")
+    .style("font-size", 10)
+    .style("fill", "#caa502")
+  var svgMap = svg
+
+    // read the csv file, initialize the histogram at 10min
+    d3.csv("/marathon_results_2016.csv", function (runnerData) {
+      runners = createRunners(runnerData)
+      hist(50)
+      dotime(50)
+      getRepRunners(runners)
+      //repRunnersTime(repRunners, 50, kmRates)
+      //fillMedal();
+      mapRepRunners(50, getKmRates(50))
+    })
+    d3.csv("/marathonHistorical.csv", function (historicalData) {historical = historicalData})
+
+
+
+    // oninput from slider make these changes
+    slider.oninput = function () {
+      hist(slider.value);
+      dotime(slider.value);
+      mapRepRunners(slider.value, kmRates);
+    }
+
+    function convertToMin(timeString) {
+      var hours = timeString.slice(0,1) * 60
+      var minutes = timeString.slice(2,4)
+      return hours + parseInt(minutes)
+    }
+
+    /* returns a runner object with attributes bib (bib number), final (final time),
+    * rates (a list of rates (in min/mi) where the rate at index i is the rate that
+    * the runner ran the first 5*(i + 1) km.
+    * this function currently filters out runners that do not have complete data
+    * parameter runnerData is the data read from a marathon data file
+    */
+    function createRunners(runnerData) {
+      var km = ["5K", "10K", "15K", "20K", "25K", "30K", "35K", "40K"]
+      var runners = []
+      runnerData.forEach(function (runner) {
+        var isValid = true
+        var rates = []
+        km.forEach(function (interval, i) {
+          var hours = runner[interval].slice(0,1) * 60
+          var minutes = runner[interval].slice(2,4)
+          var conversion = (.621371*5*(i + 1))
+          var intervalRate = (parseInt(hours) + parseInt(minutes))/ conversion
+          if (!(parseInt(hours) < 100 || parseInt(minutes) <100)) {isValid = false}
+            rates.push(intervalRate)
+        })
+        if (isValid) { // only add the runner if it has complete data
+          var final = convertToMin(runner["OfficialTime"])
+          runners.push({"rates" : rates, "bib" : runner.Bib, "final": final, "age" : runner.Age, "gender" : runner["M/F"], "country" : runner.Country})
+        }
+      })
+      return runners
+    }
+  </script>
+
+
+
+
+<p id = "histogram">
+  <script>
+    // create an svg called svgHist
+    var runners
+    var width = 1300
+    var height = 500
+    var yPadding = 30
+    var xPadding = 45
+    var r = 143
+
+    var svgM = d3.select("#medal").attr("height",184);
+    var svgHist
+
+    var xScale;
+    var kmRates;
+    var testArr;
+    var USA;
+    var count;
+    /* plots a histogram on svgHist that represents the number of runners
+     * in each mile of the race at time time.
+     * parameter time: the time of the race, in minutes*/
+    function hist(time) {
+      d3.select("#svgHist").remove()
+       svgHist= d3.select("#map").append("svg").attr("id", "svgHist").attr("width", width).attr("height", height).attr("x", 000).attr("y", 150)
+    //.style("background-color", "#21416e")
+    //.style("background-color", "#132549") //"#1C3669")//#001933")//"#1C3669")
+    .style("background-color", "#013e54")
+    .style("stroke-weight", 50)
+
+
+
+      var mileRates = getMileRates(time);
+      kmRates = getKmRates(time);
+      var bins = createBins(time, mileRates, kmRates, runners);
+      svgHist.selectAll("*").remove();
+      svgM.selectAll("*").remove();
+      xScale = d3.scaleLinear().domain([0,28]).range([xPadding,width -xPadding]);
+      var xAxis = d3.axisBottom(xScale);
+
+      svgHist.append("text")
+      .text("Distribution of Runners by Mile")
+      .style("stroke", "#caa502")
+      .attr("x", xPadding + 20)
+      .attr("y", height - 5)
+      .style("font-size", 20)
+      .style("font-weight", 100)
+      .style("fill", "#caa502")
+      //svgHist.append("g").attr("transform","translate (0,"+ (height - yPadding)+ ")").call(xAxis).style("stroke", "grey")
+      var binExtent = d3.extent(bins, function (d) {return d.runners.length})
+      var yLogScale = d3.scaleLinear().domain([1,26000]).range([height - yPadding,yPadding]) // to show log scale change this scale to linear
+      var yScale = function (value) {
+        if (value == 0) {return height - yPadding}
+        else {return yLogScale(value)}
+      }
+      var isWhite = true;
+      for (var i = yPadding; i < height-yPadding; i += (xScale(27)/54-2)) {
+        var squareHeight = xScale(27)/54 - 2
+        if (i + squareHeight > height-yPadding) {squareHeight = height-yPadding- i}
+        svgHist.append("rect")
+        .attr("x", width - xPadding - 2*xScale(27)/54 + 3)
+        .attr("width", xScale(27)/54 - 2)
+        .attr("height", squareHeight)
+        .style("fill", function () {if (isWhite) {return "white"} return "black"})
+        .attr("y", i)
+        svgHist.append("rect")
+        .attr("x", width - xPadding - xScale(27)/54 + 2)
+        .attr("width", xScale(27)/54 - 2)
+        .attr("height", squareHeight)
+        .style("fill", function () {if (isWhite) {return "black"} return "white"})
+        .attr("y", i)
+        isWhite = !isWhite
+      }
+      var yAxis = d3.axisLeft(yLogScale)//.style("fill", "#FCD108")
+      //svgHist.append("g").attr("transform","translate ("+ xPadding +",0)").call(yAxis).style("stroke", "grey")
+      var bar = svgHist.selectAll(".bar")
+      .data(bins)
+      .enter().append("g")
+      .attr("class", "bar")
+      .attr("transform", function(d) { return "translate(" + xScale(bins.indexOf(d)) + "," + (yScale(d.runners.length)) + ")"; })
+      //.style("fill", "black")
+      .style("fill", "#caa502")//"#dead3c");//"#FCD108")//"#c2a34f");
+      bar.append("rect")
+      .attr("id", function (d,i) {return "Mile" + i + "rect"})
+      .attr("x", 1)
+      .attr("width", function (d,i) {if (i == 26 ) {return xScale(27)/54}; return xScale(27)/27 - 2})
+      .attr("height", function(d) {return height - yPadding - yScale(d.runners.length);})
+      .on("mouseover", addInfo)
+      .on("mouseout", removeInfo)
+
+      bar.append("text")
+      .attr("x", xScale(27)/54)
+      .attr("y", function (d) {if (d.mileNumber < 27) {return - 10}; return(0)})
+      .text(function(d) {if (d.mileNumber < 27){return d.mileNumber}; return ""})
+      .style("stroke", function (d) {if (d.runners.length == 0) {return "grey"}})
+      .style("text-anchor", "middle")
+      .on("mouseover", function (d) {if (d.runners.length > 0) {addInfo(d, d.mileNumber)}})
+      .on("mouseout", removeInfo)
+      .attr("id", function (d,i) {return "Mile" + i + "text"})
+
+      var grad = svgM.append("defs").append("linearGradient").attr("id", "grad")
+        .attr("x1", "0%").attr("x2", "0%").attr("y1", "100%").attr("y2", "0%");
+      grad.append("stop").attr("offset",(((bins[27].runners).length/26485)*100) + "%" ).style("stop-color", "gold");
+      grad.append("stop").attr("offset", "0%").style("stop-color", "white");
+      //console.log(slider.value);
+      svgM.append("circle")
+          .attr("cx", r+164)
+          .attr("cy", r-221)
+          .attr("r", r+10)
+          .attr("stroke", "gold")
+          .attr("stroke-width", 8)
+          .attr("fill", "url(#grad)")
+          .attr("fill-opacity", .5);
+      svgM.append("text")
+          .attr("fill","#caa502")
+          .attr("stroke","#132549")
+          .attr("stroke-width","3px")
+          .attr("font-size",22)
+          .attr("x",140)
+          .attr("y",120)
+          .text("Percent of Runners Finished: " + Math.round((((bins[27].runners).length/26485)*100)) + "%");
+
+      var smallBars = bar.filter(function (bar) {return (bar.runners.length > 0 && bar.runners.length < 55)})
+
+
+    }
+
+
+
+  /* returns an array where index i-1 contains the maximum rate a runner would
+   * would have to run to be in mile i of the race. Rates are in min/mi
+   * argument time is time elapsed in the race, in minutes.   */
+   function getMileRates(time) {
+    var mileRates = [20000]
+    for (var mile = 1; mile < 27; mile++) {
+      mileRates.push(time/mile)
+    }
+    mileRates.push(0)
+    return mileRates
+  }
+  function getKmRates(time) {
+      var kmRates = [100000]
+    for (var km = 5; km < 45; km += 5) {
+      kmRates.push(time/(km*.621371))
+    }
+    return kmRates
+  }
+  /* returns a list of 27 lists where the list at index i contain the runners in
+   * mile i of the race at time time
+   *
+   * parameter` time: the amount of time that has passed in the race
+   * paratmeter mileRates: a list of rates (min/mile) where index i represents
+   * the slowest a runner could run while still being in mile i of the race at
+   * time time
+   * parameter kmRates: a list of rates
+   * runners: a list of runner objects that ran the race
+   */
+  var bins
+  function createBins(time, mileRates, kmRates, runners) {
+    bins = []
+    mileRates.forEach(function (d, i) {bins.push({"mileNumber": i, "runners" :[]})})
+    var lastMile = 0
+    var lastKm = 0
+    runners.forEach( function (runner) {
+      var mile = Math.floor(lastKm*.621371*5)
+      while (runner.rates[mile] >= kmRates[lastKm] || runner.rates[mile] < kmRates[lastKm + 1]) {
+        if (runner.rates[mile] >= kmRates[lastKm]) {
+          lastKm -= 1
+        }
+        else {
+          lastKm += 1
+        }
+      }
+      if (lastKm == 8) {lastKm = 7}
+        var runnerMile = Math.floor(time/runner.rates[lastKm])
+      if (!(runnerMile < 26)) {runnerMile = 26}
+      if (runner.final < time) {runnerMile = 27}
+        bins[runnerMile].runners.push(runner)
+      var ages = [34, 39, 44, 49, 54, 59, 64, 69, 74]
+      if (runner.gender == "M") {
+        males.push(runner)
+        var notAdded = true
+        ages.forEach( function (age, i) {
+          if (notAdded && runner.age < age) {
+            var ageBin = maleAgeGroups[i]
+            ageBin.push(runner);
+            notAdded = false
+          }
+        })
+      }
+      else {
+        females.push(runner)
+        var notAdded = true
+        ages.forEach( function (age, i) {
+          if (notAdded && runner.age < age) {
+            var ageBin = femaleAgeGroups[i]
+            ageBin.push(runner);
+            notAdded = false
+          }
+        })
+      }
+        notAdded = true
+        ages.forEach( function (age, i) {
+          if (notAdded && runner.age < age) {
+            ageBin = ageGroups[i]
+            ageBin.push(runner);
+            notAdded = false
+          }
+      })
+    })
+    return bins
+  }
+// #026475    #013e54    #001933    #136055    #27a877    #32bc78
+// #3dd179    #9cc451    #fbb829    #dead3c    #c2a34f    #e0cf7f    #fefbaf
+  function addInfo(bar, mileNumber) {
+    var infoWidth = 100
+    var infoHeight = 40
+    var coordinates = [0, 0];
+    coordinates = d3.mouse(document.getElementById("svgHist"));
+    var mouseX = coordinates[0] - 4;
+    var mouseY = coordinates[1] - infoHeight - 4;
+    if (mouseX + infoWidth > width) {mouseX = width - infoWidth - 4}
+    if (mouseY - infoHeight < 0) {mouseY = infoHeight + 4}
+    // give percent of people in , average time, ___ miles in ___ minutes, percentile
+    var result = {}
+    var averageTime = d3.mean(bar.runners, function (runner) {return runner.final})
+    result.averageTime = Math.floor(averageTime/ 60) + " hr " + Math.floor(averageTime%60) + " min"
+    result.size = bar.runners.length
+    result.percent = Math.round(result.size / d3.sum(bins, function (bin) {return bin.runners.length})*10000)/100
+    var svgInfo = svgHist.append("svg").attr("id", "svgInfo")
+      .attr("class", "info")
+      .attr("width", infoWidth)
+      .attr("height", infoHeight)
+      .attr("x", mouseX)
+      .attr("y", mouseY)
+      //.attr("x", xScale(bar.mileNumber))
+    svgInfo.style("font-size", 8).style("font-weight", 300).style("font-family", "Helvetica")
+    svgInfo.append("rect")
+    .attr("width", infoWidth)
+    .attr("height", infoHeight)
+              .attr("fill","#caa502")
+          .attr("stroke","#132549")
+          .attr("stroke-width","3px")
+    .attr("rx", 5)
+    .attr("ry", 5)
+    if (bar.mileNumber == 27) {var message = "FINISH"}
+      else {var message = "Mile " + bar.mileNumber}
+    svgInfo.append("text")
+              .attr("x",  2)
+              .attr("y", 12)
+              .text(message)
+    svgInfo.append("text")
+              .attr("x",  2)
+              .attr("y", 22)
+              .text("" + result.size + " runners ("+ (result.percent) + "%)")
+    svgInfo.append("text")
+              .attr("x",  2)
+              .attr("y", 32)
+              .text("average finish: " + result.averageTime)
+  }
+  function removeInfo () {
+    svgMap.selectAll("svg.info").remove()
+  }
+
+  function removeInfoMap (runner) {
+    svgMap.selectAll("svg.info").remove()
+    svgHist.select("#Mile" + runner.mile + "rect").attr("fill", "#caa502")
+    svgHist.select("#Mile" + runner.mile + "text").attr("fill", "#caa502")
+    svgHist.select("#Mile" + runner.mile + "text").attr("stroke", "#caa502")
+  }
+  function mapRepRunners(time, kmRates) {
+      removeCircles();
+      if (visibility.female) {
+        repRunnersTime(repRunnersF, time, kmRates)
+        displayOnMap(repRunnersF)
+      }
+      if (visibility.male) {
+        repRunnersTime(repRunnersM, time, kmRates)
+        displayOnMap(repRunnersM)
+      }
+      if (visibility.fm) {
+        repRunnersTime(repRunnersFM, time, kmRates)
+        displayOnMap(repRunnersFM)
+      }
+
+      if (visibility.general) {
+        repRunnersTime(repRunners, time, kmRates)
+        displayOnMap(repRunners)
+      }
+    }
+  /* design decisions to consider:
+   *    what do we do with the .2 at the end?
+   *    wide range of values: 26,000 runners in one bar at beginning */
+ </script>
+</p>
+
+<body></body>
+
+<script>
+var points = [
+  [90,474],
+  [92,466],
+  [122,450],
+  [144,450],
+  [170,436],
+  [188,426],
+  [206,408],
+  [220,380],
+  [248,370],
+  [268,360],
+  [282,328],
+  [298,310],
+  [320,320],
+  [330,312],
+  [372,294],
+  [408,284],
+  [427,280],
+  [462,278],
+  [484,274],
+  [506,280],
+  [536,275],
+  [556,271],
+  [580,258],
+  [604,239],
+  [617,235],
+  [642,226],
+  [666,230],
+  [688,224],
+  [708,194],
+  [726,168],
+  [746,151],
+  [762,126],
+  [785,112],
+  [803,91],
+  [814,74],
+  [820,62],
+  [858,72],
+  [882,78],
+  [898,72],
+  [922,74],
+  [943,79],
+  [966,80],
+  [990,78],
+  [1017,65],
+  [1038,71],
+  [1056,81],
+  [1081,72],
+  [1109,67],
+  [1136,56],
+  [1156,45],
+  [1189,35],
+  [1207,31],
+  [1237,32],
+  [1247,30]
+];
+
+
+
+var path = svg.append("path")
+    .data([points])
+    .attr("d", d3.line().x(function(d){return d[0];}).y(function(d){return d[1]}));
+
+svg.selectAll(".point")
+    .data(points)
+    .enter().append("circle")
+    .attr("class","pathpoint")
+    .attr("r", 4)
+    .attr("transform", function(d) { return "translate(" + d + ")"; });
+
+svg.append("image")
+  .attr("xlink:href","/map2copy2.png")
+  .attr("height",500)
+  .attr("width",1360);
+
+var circle = svg.append("circle")
+    .attr("class","runner")
+    .attr("r", 13)
+    .attr("transform", "translate(" + points[0] + ")");
+
+var circles;
+
+function removeCircles(){
+  svg.selectAll("circle.runner").remove();
+}
+
+function removeSubCircles(){
+  svg.selectAll("circle.runner").filter(function (d) {return !d.keep}).remove();
+  visibility.male = false
+  visibility.female = false
+  visibility.fm = false
+}
+function displayOnMap(pointArray){
+  //pointArray = pointArray.map(function(d){return {percent: d.percent}})
+  circles = svg.selectAll(".runner circle")
+    .data(pointArray)
+    .enter().append("circle")
+    .attr("class","runner")
+    .attr("r",7)
+    .style("fill", function (d) {return d.color})
+    .attr("transform",function(d){return translateAlong(path.node(), d.percent)()();})
+    .on("click", click)
+    .on("mouseover", addInfoRepRunner)
+    .on("mouseout", removeInfoMap);
+
+  circles.exit().remove();
+}
+
+
+
+// Returns an attrTween for translating along the specified path element.
+function translateAlong(path, completed) {
+  var l = path.getTotalLength();
+  return function(d, i, a) {
+    return function(t){
+      var p = path.getPointAtLength(completed * l);
+      return "translate(" + p.x + "," + p.y + ")";
+    };
+  };
+}
+
+</script>
+
+<p id = "repRunners">
+  <script type="text/javascript">
+    function meanRates (runners) {
+      var allRates = []
+      var firstRunner = runners[0]
+      var firstRunnerRates = firstRunner.rates
+      firstRunnerRates.forEach(function (rate) {allRates.push([])})
+      runners.forEach(function (runner) {
+        runner.rates.forEach(function (rate, i) {
+          allRates[i].push(rate)
+        })
+      })
+      allRates.forEach(function (rate, i) {
+        allRates[i] = d3.mean(rate)
+      })
+      return allRates
+    }
+    function fastest (runners) {
+      var fastest = runners[0]
+      runners.forEach(function (runner){
+        if (runner.final < fastest.final) {fastest = runner}
+      })
+      return fastest
+    }
+    function oldestYoungest(runners) {
+      var oldest = runners[0]
+      var youngest = runners[0]
+      runners.forEach(function (runner){
+        if (runner.age > oldest.age) {oldest = runner}
+        if (runner.age < youngest.age) {youngest = runner}
+      })
+      return [oldest, youngest]
+    }
+    function getRepRunners (runners) {
+      var avgMalesRates = meanRates(males)
+      var avgFemaleRates = meanRates(females)
+      var fastestFemale = fastest(females)
+      var fastestMale = fastest(males)
+      var oldestYoungestRunner = oldestYoungest(runners)
+      var ages = ["18-34", "35-39", "40-44", "45-49", "50-54", "55-59", "60-64", "65-69", "70-74"]
+      maleAgeGroups.forEach(function (ageGroup, i) {
+          if (ageGroup.length > 0) {
+            var mean = meanRates(ageGroup)
+            var category = "Average Male age " + ages[i]
+            var countryBreakdown = d3.nest().key(function (d) {return d.country}).map(ageGroup)
+            countryBreakdown.each(function (country, name) {
+              countryBreakdown.set(name, country.length/ageGroup.length)
+            })
+            repRunnersM.push({"category":category, "rates" : mean, "countries": countryBreakdown, "color":"#912E33", "individual": false, "keep":false})
+          }
+      })
+
+      ageGroups.forEach(function (ageGroup, i) {
+          if (ageGroup.length > 0) {
+            var mean = meanRates(ageGroup)
+            var category = "Average Runner age " + ages[i]
+            var countryBreakdown = d3.nest().key(function (d) {return d.country}).map(ageGroup)
+            countryBreakdown.each(function (country, name) {
+              countryBreakdown.set(name, country.length/ageGroup.length)
+            })
+
+            repRunnersFM.push({"category":category, "rates" : mean, "countries": countryBreakdown, "color":"#458B00", "individual": false, "keep":false})
+          }
+      })
+      femaleAgeGroups.forEach(function (ageGroup, i) {
+          if (ageGroup.length > 0) {
+            var category = "Average Female age " + ages[i]
+            var countryBreakdown = d3.nest().key(function (d) {return d.country}).map(ageGroup)
+            countryBreakdown.each(function (country, name) {
+              countryBreakdown.set(name, country.length/ageGroup.length)
+            })
+            repRunnersF.push({"category":category, "rates" : meanRates(ageGroup), "countries": countryBreakdown, "color": "pink", "individual": false, "keep":false})
+          }
+      })
+
+      repRunners.push({"category":"Average Male", "rates" : avgMalesRates, "keep":true, "individual":false, "color":"steelblue"})
+      repRunners.push({"category":"Average Female", "rates" : avgFemaleRates, "keep":true, "individual":false, "color":"steelblue"})
+      repRunners.push({"category":"Fastest Female", "rates" : fastestFemale.rates, "keep":true, "individual":true, "age":fastestFemale.age, "color":"steelblue"})
+      repRunners.push({"category":"Fastest Male", "rates" : fastestMale.rates, "keep":true, "individual":true,"age":fastestMale.age, "color":"steelblue"})
+      repRunners.push({"category":"Oldest", "rates" : oldestYoungestRunner[0].rates, "keep":true, "individual":true, "age" : oldestYoungestRunner[0].age, "color":"steelblue"})
+      repRunners.push({"category":"Average Runner", "rates" : meanRates(runners), "keep":true, "individual":false, "color":"steelblue"})
+      //repRunners.push({"category":"Youngest", "rates" : oldestYoungestRunner[1].rates, "keep":true, "individual":true})
+      var testArr = repRunnersF[0].countries.keys();
+      var USA = repRunnersF[0].countries.get("USA")*100;
+      var others = repRunnersF[0].countries.values().sort().reverse();
+      //console.log(repRunnersF[0].countries.entries());
+
+      var count = [];
+      var count1 = 0;
+      for (var i = 0; i < 11; i++) {
+          if(testArr[i]!= "USA"){
+            count.push(others[i]*100);
+            //console.log(count);
+          }
+      }
+      count.shift();
+      //console.log(count);
+      for (var i = 0; i < testArr.length; i++) {
+          if(testArr[i]!= "USA"){
+            count1+= repRunnersF[0].countries.get(testArr[i]);
+          }
+      }
+      //console.log(count1);
+      var UsArr = [Math.round(USA),Math.round(count1*100)];
+      //console.log(UsArr);
+      //for (var i = 0; i < testArr.length; i++) {
+       // testArr[i]
+     // }
+      //createFPie(count,testArr);
+      //createUSPie(UsArr);
+    }
+    //console.log(count);
+    /* returns a list of representative runners with attributes:
+    *     "category" (description of runner)
+    *     "rates" (a list of rates (in min/mi) where the rate at index i is the rate that
+    *      the runner ran the first 5*(i + 1) km.)
+    *      "mile": which mile the runner is on at a given time (starting at 0, 27 means finished)
+    * arguments:
+    *  repRunners: a list of runner objects with category and rates attributes
+    * time: how far in the race it has been
+    * kmRates:
+    */
+    function repRunnersTime (repRunners, time, kmRates) {
+      var lastKm = 0
+      repRunners.forEach(function (runner) {
+        var mile = Math.floor(lastKm*.621371*5)
+          while (runner.rates[mile] >= kmRates[lastKm] || runner.rates[mile] < kmRates[lastKm + 1]) {
+          if (runner.rates[mile] >= kmRates[lastKm]) {
+            lastKm -= 1
+          }
+          else {
+            lastKm += 1
+          }
+        }
+        if (lastKm == 8) {lastKm = 7}
+        runner.percent = Math.min((time/runner.rates[lastKm])/26.6, 1);
+
+
+        if (lastKm == 8) {lastKm = 7}
+        var runnerMile = Math.floor(time/runner.rates[lastKm])
+        if (!(runnerMile < 27)) {runnerMile = 27}
+          runner.mile = runnerMile
+
+        })
+      // var percentRunners = repRunners.map(function(d){return {percent: d.percent}});
+      // removeCircles();
+      // displayOnMap(percentRunners);
+      }
+  </script>
+
+</p>
+
+<p id = "mapRepRunners">
+  <script>
+
+    function click (data) {
+      addDetails(data)
+    }
+
+    function ageSpread (data) {
+      if (data.category == "Average Male") {
+        visibility.male= !visibility.male
+        mapRepRunners(slider.value, getKmRates(slider.value))
+      }
+
+      if (data.category == "Average Female") {
+        visibility.female= !visibility.female
+        mapRepRunners(slider.value, getKmRates(slider.value))
+      }
+      if (data.category == "Average Runner") {
+        visibility.fm = !visibility.fm
+        mapRepRunners(slider.value, getKmRates(slider.value))
+      }
+    }
+
+    function addInfoRepRunner(runner) {
+    var infoWidth = 100
+    var infoHeight = 40
+    var coordinates = [0, 0];
+    coordinates = d3.mouse(document.getElementById("map"));
+    var mouseX = coordinates[0] - 4;
+    var mouseY = coordinates[1] - infoHeight - 4;
+    if (mouseX + infoWidth > svgMap.attr("width")) {mouseX = svgMap.attr("width") - infoWidth - 4}
+    if (mouseY - infoHeight < 0) {mouseY = mouseY + infoHeight + 10}
+
+      var svgInfoRepRunner = svgMap.append("svg").attr("id", "svgInfoRepRunner")
+      .attr("class", "info")
+      .attr("width", infoWidth)
+      .attr("height", infoHeight)
+      .attr("x", mouseX)
+      .attr("y", mouseY)
+
+    svgInfoRepRunner.style("font-size", 8).style("font-weight", 300).style("font-family", "Helvetica")
+    svgInfoRepRunner.append("rect")
+    .attr("width", infoWidth)
+    .attr("height", infoHeight)
+    .style("fill", runner.color)
+    .attr("rx", 5)
+    .attr("ry", 5)
+
+
+    var title = runner.category
+    if (runner.individual) {title = title + "  (age " + runner.age + ")"}
+    svgInfoRepRunner.append("text")
+              .attr("x",  2)
+              .attr("y", 12)
+              .text(title)
+
+    var message = "Mile: " + runner.mile
+    if (runner.mile == 27) {message = "FINISH"}
+
+    svgInfoRepRunner.append("text")
+              .attr("x",  2)
+              .attr("y", 24)
+              .text(message)
+
+    svgInfoRepRunner.append("text")
+              .attr("x",  2)
+              .attr("y", 36)
+              .text(runner.finish)
+    svgHist.select("#Mile" + runner.mile + "rect").attr("fill", runner.color)
+    svgHist.select("#Mile" + runner.mile + "text").attr("stroke", runner.color)
+    svgHist.select("#Mile" + runner.mile + "text").attr("fill", runner.color)
+  }
+
+  function addInfoYear(category,year) {
+    var infoWidth = 100
+    var infoHeight = 40
+    var coordinates = [0, 0];
+    coordinates = d3.mouse(document.getElementById("map"));
+    var mouseX = coordinates[0] - 4;
+    var mouseY = coordinates[1] - infoHeight - 4;
+    if (mouseX + infoWidth > svgMap.attr("width")) {mouseX = svgMap.attr("width") - infoWidth - 4}
+    if (mouseY - infoHeight < 0) {mouseY = infoHeight + 4}
+
+      var svgInfoYear = svgMap.append("svg")
+      .attr("class", "info")
+      .attr("width", infoWidth)
+      .attr("height", infoHeight)
+      .attr("x", mouseX)
+      .attr("y", mouseY)
+
+    svgInfoYear.style("font-size", 8).style("font-weight", 300).style("font-family", "Helvetica")
+    svgInfoYear.append("rect")
+    .attr("width", infoWidth)
+    .attr("height", infoHeight)
+              .attr("fill","#caa502")
+          .attr("stroke","#132549")
+          .attr("stroke-width","3px")
+    .attr("rx", 5)
+    .attr("ry", 5)
+
+    var title = year.year
+    svgInfoYear.append("text")
+              .attr("x",  2)
+              .attr("y", 12)
+              .text(title)
+
+  var time = Math.floor(year[category]/ 60) + " hr " + Math.floor(year[category]%60) + " min"
+
+    svgInfoYear.append("text")
+              .attr("x",  2)
+              .attr("y", 24)
+              .text(time)
+
+  }
+
+  function removeInfoYear () {
+    svgMap.selectAll("svg.info").remove()
+  }
+  //var data = [10,20,100];
+      // //var svgP = d3.select("body").append("svg")
+      //   .attr("id","pID")
+      //   .attr("width", 1000)
+      //   .attr("height", 400)
+      // .append("g")
+      // .attr("transform", "translate(" + 600 + "," + 200 + ")");
+
+  function createFPie(data,keys) {
+        //radius = Math.min(width, height) / 2;
+    var color = d3.scaleOrdinal()
+        .range(['#ff5500','#ffff00','#55ff00','#00ff55','#00ffff','#0055ff','#5500ff','#ff00ff','#ff0080','#ff0000']);
+
+    var arc = d3.arc()
+        .outerRadius(130)
+        .innerRadius(0);
+
+    var labelArc = d3.arc()
+        .outerRadius(90)
+        .innerRadius(90);
+
+    var pie = d3.pie()
+        .sort(null)
+        .value(function(d) { return (d); });
+
+      var g = svgP.selectAll(".arc")
+          .data(pie(data))
+        .enter().append("g")
+          .attr("class", "arc");
+
+      g.append("path")
+          .attr("d", arc)
+          .style("fill", function(d) { return color(d.data); });
+
+      g.append("text")
+          .attr("transform", function(d) { return"translate(" + labelArc.centroid(d) + ")"; })
+          .attr("dy", ".3em")
+          .attr("font-size",16)
+          .text((function(d,i) { return (keys[i]) + "%"; }));
+
+  }
+
+
+  var svgDetails
+
+  function hideDetails() {
+    d3.select("#svgDetails").remove()
+    hist(slider.value)
+  }
+
+  function addDetails (repRunner) {
+
+  if (repRunner.keep) {d3.select("#svgDetails").remove()
+    // d3.select("#svgHist").remove()
+    d3.select("#svgHist")
+
+    var svgDetailsWidth = 300
+    var svgDetailsHeight = 300
+    var buttonSpacing = 5
+
+    d3.select("#svgDetails").remove()
+
+
+    svgDetails = d3.select("#map").append("svg").attr("id", "svgHist").attr("width", svgDetailsWidth).attr("height", svgDetailsHeight).attr("id", "svgDetails").attr("x", 875).attr("y", 200).style("fill", "#caa502")
+    displayHistorical(repRunner)
+    if (repRunner.individual) {
+      var buttons = [{"label":"Historical", "clicked":false}, {"label":"Details", "clicked":false}]
+    }
+    else {
+      var buttons = [{"label":"Historical", "clicked":false}, {"label":"USForeign", "clicked":false}, {"label":"ForeignMakeup", "clicked":false}]
+
+      function ageSpreadInner ()  { ageSpread(repRunner) }
+
+      svgDetails.append("rect")
+      .attr("width", svgDetailsWidth-30)
+      .attr("height", 20)
+      .attr("x", 15)
+      .attr("y", svgDetailsHeight - 20)
+      .style("fill", "#caa502")
+      .on("click", ageSpreadInner)
+      .attr("rx", 5)
+      .attr("ry", 5)
+
+
+
+      svgDetails.append("text")
+      .attr("id","ageSpreadText")
+      .attr("x", 5 + svgDetailsWidth/2)
+      .attr("y", svgDetailsHeight - 8)
+      .style("stroke", "black")
+      .style("text-anchor", "middle")
+      .text("Toggle Age Spread Display")
+      .style("font-size", 11)
+      .on("click", ageSpreadInner)
+      .style("fill", "black")
+
+    }
+    svgDetails.append("rect")
+      .attr("width", svgDetailsWidth-30)
+      .attr("height", 20)
+      .attr("x", 15)
+      .attr("y", svgDetailsHeight - 45)
+      .style("fill", "#caa502")
+      .on("click", hideDetails)
+      .attr("rx", 5)
+      .attr("ry", 5)
+
+    svgDetails.append("text")
+      .attr("x", 5 + svgDetailsWidth/2)
+      .attr("y", svgDetailsHeight - 32)
+      .style("stroke", "black")
+      .style("text-anchor", "middle")
+      .text("Hide Historical")
+      .style("font-size", 11)
+      .on("click", hideDetails)
+      .style("fill", "black")
+    }
+    // var buttonWidth = (svgDetailsWidth - ((buttons.length+1)*buttonSpacing)) / buttons.length
+    //   var button = svgDetails.selectAll("rect.top")
+    //   .data(buttons).enter().append("rect")
+    //   .attr("class","top")
+    //   .attr("width", buttonWidth)
+    //   .attr("height", 10)
+    //   .attr("x", function (d) {return (buttons.indexOf(d)) * buttonWidth + (buttons.indexOf(d) + 1)*buttonSpacing})
+    //   .attr("y", 10)
+    //   .attr("fill", "blue")
+    //   .attr("id", function (d) {return d.label})
+    //   .on("click", function (d) {clickButton(repRunner, d, buttons)})
+
+    //   var label = svgDetails.selectAll("text.top")
+    //   .data(buttons).enter().append("text")
+    //   .attr("x", function (d) { return (buttons.indexOf(d)) * buttonWidth + (buttons.indexOf(d) + 1)*buttonSpacing + .5 * buttonWidth})
+    //   .attr("y", 17)
+    //   .attr("class","top")
+    //   .style("stroke", "white")
+    //   .style("text-anchor", "middle")
+    //   .style("font-size", 10)
+    //   .text(function (d) {return d.label})
+    //   .on("click", function (d) {clickButton(repRunner, d, buttons)})
+
+  }
+
+  // function clickButton (repRunner, button, buttons) {
+  //   buttons.forEach(function (indButton) {
+  //     if (indButton != button) {
+  //       indButton.clicked = false
+  //       d3.select("#" + indButton.label).style("fill", "blue")
+
+  //     }
+  //     else {
+  //       indButton.clicked = true
+  //       d3.select("#" + indButton.label).style("fill", "red")
+  //     }
+  //   })
+
+
+  // }
+
+  function displayHistorical (repRunner) {
+
+
+    historicalWidth = 270
+    historicalHeight = 230
+    var category = repRunner.category
+    var yMax = d3.max(historical, function (d) {
+      return d[category]})
+    //console.log("YMax"+yMax)
+    var yScale = d3.scaleLinear().domain([0,450]).range([historicalHeight-15,15])
+
+    barWidth = historicalWidth/12
+
+    var yAxis = d3.axisLeft(yScale);
+    //svgDetails.append("g").attr("transform","translate ("+ barWidth+",0)").call(yAxis).style("stroke","black").style("font-size", "6")
+
+    function addInfoYearInner (data) {addInfoYear(category, data)}
+
+    var year = svgDetails.selectAll("rect").data(historical).enter()
+      .append("rect")
+      .attr("x", function (d) {return barWidth*(historical.indexOf(d)+1)})
+      .attr("y", function (d) {return 15+yScale(d[category])})
+      .attr("width", barWidth - 2)
+      .attr("height", function (d) {return historicalHeight-yScale(d[category]-15)})
+      .attr("fill","#caa502")
+      .attr("stroke","#132549")
+      .on("mouseover", addInfoYearInner)
+      .on("mouseout", removeInfoYear)
+
+
+    // historical.forEach(function (year,i) {
+    //   //console.log(year[category])
+    //   //console.log(yScale(year[category]))
+    //   svgDetails.append("rect")
+    //   .attr("x", barWidth*(i+1))
+    //   .attr("y", 15+yScale(year[category]))
+    //   .attr("width", barWidth - 2)
+    //   .attr("height", historicalHeight-yScale(year[category]-15))
+    // })
+
+    svgDetails.append("text")
+    .attr("x", historicalWidth/2)
+    .attr("y", 12)
+    .text("Historical Finishes: " + category)
+    .style("text-anchor", "middle")
+    .style("stroke","#caa502")
+    .style("fill", "#caa502")
+
+  }
+
+  </script>
+
+</p>
+
+</html>
